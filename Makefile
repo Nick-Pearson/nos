@@ -1,5 +1,5 @@
 CC=cc\bin\i686-elf-g++
-CFLAGS=-nostartfiles -nostdlib
+CFLAGS=-nostartfiles -nostdlib -masm=intel
 LDFLAGS=-T linker.ld
 
 ASS=Tools\NASM\nasm.exe
@@ -27,7 +27,7 @@ $(BUILD_DIR)/kernel.iso: $(BUILD_DIR)/kernel.bin
 	Tools/ISO9660Generator.exe 4 ".\build\kernel.iso" ".\ISO\isolinux-debug.bin" true ".\ISO"
 	$(MV) $(ISO_DIR)/kernel.bin $(BUILD_DIR)/kernel.bin
 
-$(BUILD_DIR)/kernel.bin: $(OBJECT_FILES)
+$(BUILD_DIR)/kernel.bin: $(OBJECT_FILES) linker.ld
 	$(CC) $(OBJECT_FILES) -o $@ $(LDFLAGS) $(CFLAGS)
 
 $(BUILD_DIR)/cpp/%.o: %.cpp

@@ -21,6 +21,9 @@ BITS 32
 
 GLOBAL _Kernel_Start:function
 
+KERNEL_VIRTUAL_BASE equ 0xC0000000
+KERNEL_PAGE_TABLE equ (KERNEL_VIRTUAL_BASE >> 22)
+
 EXTERN cmain
 
 SECTION .text
@@ -56,27 +59,27 @@ _Kernel_Start:
 
   mov dword ECX, 0x2BADB002
   cmp ECX, EAX
-  jne HandleNoMultiboot
+  jne (HandleNoMultiboot - KERNEL_VIRTUAL_BASE)
 
-
-	; Init Screen Colour
-	mov EAX, 0x2000
-	mov EBX, 0xB8000
-	mov ECX, 2000
-Print:
-	mov word [EBX], AX
-	add EBX, 2
-	loop Print
+	mov dword [MultibootInfo_Structure - KERNEL_VIRTUAL_BASE], EBX
+	add dword EBX, 0x4
+	mov dword EAX, [EBX]
+	mov dword [MultibootInfo_Memory_Low - KERNEL_VIRTUAL_BASE], EAX
+	add dword EBX, 0x4
+	mov dword EAX, [EBX]
+	mov dword [MultibootInfo_Memory_High - KERNEL_VIRTUAL_BASE], EAX
 
 	; Enter protected mode
 	mov dword EAX, CR0
 	or EAX, 1
 	mov dword CR0, EAX
 
-	mov dword ESP, Kernel_Stack_Start
+	; Initialise Stack
+	mov dword ESP, (Kernel_Stack_Start - KERNEL_VIRTUAL_BASE)
 
-	mov dword [GDT_Pointer + 2], GDT_Contents
-	mov dword EAX, GDT_Pointer
+	; Initialise GDT Data
+	mov dword [GDT_Pointer - KERNEL_VIRTUAL_BASE + 2], (GDT_Contents - KERNEL_VIRTUAL_BASE)
+	mov dword EAX, (GDT_Pointer - KERNEL_VIRTUAL_BASE)
 	lgdt [EAX]
 	; Set data segments
 	mov dword EAX, 0x10
@@ -87,7 +90,7 @@ Print:
 	mov word SS, EAX
 
   ; Force reload of code segment
-  jmp 8:Boot_FlushCsGDT
+  jmp 8:(Boot_FlushCsGDT - KERNEL_VIRTUAL_BASE)
 Boot_FlushCsGDT:
   ; END - Tell CPU about GDT
 
@@ -102,6 +105,49 @@ Boot_FlushCsGDT:
   loop .ColourOutput4
   ; END - Set Screen Colour
 
+	; VIRTUAL MEMORY
+	; Initilise Page Tables
+	lea EAX, [Page_Table1 - KERNEL_VIRTUAL_BASE]
+	mov EBX, 7
+	mov ECX, (1024 * 4)
+	.Loop1:
+	mov [EAX], EBX
+	add EAX, 4
+	add EBX, 4096
+	loop .Loop1
+
+	lea EAX, [Page_Table1 - KERNEL_VIRTUAL_BASE]
+	add EAX, (KERNEL_PAGE_TABLE * 1024 * 4)
+	mov EBX, 7
+	mov ECX, (1024 * 4)
+	.Loop2:
+	mov [EAX], EBX
+	add EAX, 4
+	add EBX, 4096
+	loop .Loop2
+
+	; Initialise Page Directory
+	lea EBX, [Page_Table1 - KERNEL_VIRTUAL_BASE]
+	or EBX, 7
+	lea EDX, [Page_Directory - KERNEL_VIRTUAL_BASE]
+	mov ECX, 1024
+	.Loop3:
+	mov [EDX], EBX
+	add EDX, 4
+	add EBX, 4096
+	loop .Loop3
+
+	; Enable paging
+	lea ECX, [Page_Directory - KERNEL_VIRTUAL_BASE]
+	mov CR3, ECX
+	mov ECX, CR0
+	or ECX, 0x80000000
+	mov CR0, ECX
+
+	lea ECX, [HighHalf]
+	jmp ECX
+
+HighHalf:
 	call cmain
 
 	jmp Halt
@@ -159,3 +205,15 @@ Output:
 	add EBX, 2
 	loop Output
   jmp Halt
+
+
+SECTION .bss
+
+GLOBAL Page_Table1:data
+GLOBAL Page_Directory:data
+
+align 4096
+Page_Table1: resb (1024 * 4 * 1024)	; Reserve uninitialised space for Page Table -  # of entries/page table * 4 bytes/entry * total # of page tables
+											; actual size = 4194304 bytes = 4MiB, represents 4GiB in physical memory
+											; ie. each 4 byte entry represent 4 KiB in physical memory
+Page_Directory: resb (1024 * 4 * 1) ; Reserve uninitialised space for Page Directory - # of pages tables * 4 bytes/entry * # of directory (4096 = 4 KiB)

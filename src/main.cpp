@@ -16,7 +16,7 @@ void cmain()
 	}
 
 	// Delay loop which allows us to see the outputted colour before returning to assembly code
-	i = 0x0F000000;
+	i = 0xFF000000;
 	while (i--)
 	{
 		;
