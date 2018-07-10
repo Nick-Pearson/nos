@@ -1,32 +1,10 @@
-;
-; FlingOS™ Getting Started tutorials
-; Copyright (C) 2015  Edward Nutting
-;
-; This program is free software; you can redistribute it and/or modify
-; it under the terms of the GNU General Public License as published by
-; the Free Software Foundation; either version 2 of the License, or
-; (at your option) any later version.
-;
-; This program is distributed in the hope that it will be useful,
-; but WITHOUT ANY WARRANTY; without even the implied warranty of
-; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-; GNU General Public License for more details.
-;
-; You should have received a copy of the GNU General Public License along
-; with this program; if not, write to the Free Software Foundation, Inc.,
-; 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-;
-
 BITS 32
+
+SECTION .text
 
 GLOBAL _Kernel_Start:function
 
-KERNEL_VIRTUAL_BASE equ 0xC0000000
-KERNEL_PAGE_TABLE equ (KERNEL_VIRTUAL_BASE >> 22)
-
 EXTERN cmain
-
-SECTION .text
 
 ; BEGIN - Multiboot Header
 MultibootSignature dd 464367618
@@ -41,8 +19,10 @@ MultibootInfo_Memory_Low dd 0
 
 MultibootInfo_Structure dd 0
 
-Kernel_Stack_End:
-  TIMES 65535 db 0
+KERNEL_VIRTUAL_BASE equ 0xC0000000
+KERNEL_PAGE_TABLE equ (KERNEL_VIRTUAL_BASE >> 22)
+
+Kernel_Stack_End: TIMES 65535 db 0
 Kernel_Stack_Start:
 
 GDT_Contents:
@@ -57,9 +37,13 @@ _Kernel_Start:
 
   cli
 
+	mov ESP, 0xF0F0F0F0
+
   mov dword ECX, 0x2BADB002
   cmp ECX, EAX
   jne (HandleNoMultiboot - KERNEL_VIRTUAL_BASE)
+
+	mov ESP, 0xE0E0E0E0
 
 	mov dword [MultibootInfo_Structure - KERNEL_VIRTUAL_BASE], EBX
 	add dword EBX, 0x4
@@ -68,31 +52,23 @@ _Kernel_Start:
 	add dword EBX, 0x4
 	mov dword EAX, [EBX]
 	mov dword [MultibootInfo_Memory_High - KERNEL_VIRTUAL_BASE], EAX
+	mov ESP, 0xD0D0D0D0
+
+	mov dword eax, 0x2F
+	mov dword ebx, 0xB8000
+	mov dword ecx, 2000
+	.ColourSetup:
+	mov byte [ebx], 0
+	mov byte [ebx+1], al
+	add ebx, 2
+	loop .ColourSetup
 
 	; Enter protected mode
 	mov dword EAX, CR0
 	or EAX, 1
 	mov dword CR0, EAX
 
-	; Initialise Stack
-	mov dword ESP, (Kernel_Stack_Start - KERNEL_VIRTUAL_BASE)
-
-	; Initialise GDT Data
-	mov dword [GDT_Pointer - KERNEL_VIRTUAL_BASE + 2], (GDT_Contents - KERNEL_VIRTUAL_BASE)
-	mov dword EAX, (GDT_Pointer - KERNEL_VIRTUAL_BASE)
-	lgdt [EAX]
-	; Set data segments
-	mov dword EAX, 0x10
-	mov word DS, EAX
-	mov word ES, EAX
-	mov word FS, EAX
-	mov word GS, EAX
-	mov word SS, EAX
-
-  ; Force reload of code segment
-  jmp 8:(Boot_FlushCsGDT - KERNEL_VIRTUAL_BASE)
-Boot_FlushCsGDT:
-  ; END - Tell CPU about GDT
+	mov ESP, 0xC0C0C0C0
 
   ; BEGIN - Set Screen Colour
   mov dword EAX, 0x5F		; Colour: 0x5- = Purple background, 0x-F = White foreground
@@ -105,6 +81,7 @@ Boot_FlushCsGDT:
   loop .ColourOutput4
   ; END - Set Screen Colour
 
+	mov ESP, 0xB0B0B0B0
 	; VIRTUAL MEMORY
 	; Initilise Page Tables
 	lea EAX, [Page_Table1 - KERNEL_VIRTUAL_BASE]
@@ -116,6 +93,8 @@ Boot_FlushCsGDT:
 	add EBX, 4096
 	loop .Loop1
 
+	mov ESP, 0xA0A0A0A0
+
 	lea EAX, [Page_Table1 - KERNEL_VIRTUAL_BASE]
 	add EAX, (KERNEL_PAGE_TABLE * 1024 * 4)
 	mov EBX, 7
@@ -126,6 +105,7 @@ Boot_FlushCsGDT:
 	add EBX, 4096
 	loop .Loop2
 
+	mov ESP, 0x90909090
 	; Initialise Page Directory
 	lea EBX, [Page_Table1 - KERNEL_VIRTUAL_BASE]
 	or EBX, 7
@@ -137,17 +117,49 @@ Boot_FlushCsGDT:
 	add EBX, 4096
 	loop .Loop3
 
+	mov ESP, 0x80808080
 	; Enable paging
 	lea ECX, [Page_Directory - KERNEL_VIRTUAL_BASE]
 	mov CR3, ECX
 	mov ECX, CR0
+	mov ESP, 0x70707070
 	or ECX, 0x80000000
 	mov CR0, ECX
+
 
 	lea ECX, [HighHalf]
 	jmp ECX
 
 HighHalf:
+	nop
+	mov ESP, 0x60606060
+
+	; Initialise Stack
+	mov dword ESP, Kernel_Stack_Start
+
+	; Initialise GDT Data
+	mov dword [GDT_Pointer + 2], GDT_Contents
+	mov dword EAX, GDT_Pointer
+	lgdt [EAX]
+	; Set data segments
+	mov dword EAX, 0x10
+	mov word DS, EAX
+	mov word ES, EAX
+	mov word FS, EAX
+	mov word GS, EAX
+	mov word SS, EAX
+
+  ; Force reload of code segment
+  jmp 8:(Boot_FlushCsGDT - KERNEL_VIRTUAL_BASE)
+Boot_FlushCsGDT:
+
+  ; END - Tell CPU about GDT
+	mov byte [0xB82A6], 0x64
+	mov byte [0xB82A8], 0x6f
+	mov byte [0xB82AA], 0x6e
+	mov byte [0xB82AC], 0x65
+	mov byte [0xB82AE], 0x2e
+
 	call cmain
 
 	jmp Halt
